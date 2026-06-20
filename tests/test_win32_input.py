@@ -116,7 +116,9 @@ def test_ensure_off_edge_moves_cursor_away_from_corner():
     # Why: this is the core safety — a cursor pinned in a monitor corner (within STEP_PIXELS of two edges)
     # must be recentered so the next outward nudge cannot clamp. Restores the original position afterward.
     start = win32_input.get_cursor_pos()
-    left, top, right, bottom = win32_input.get_monitor_bounds(*start)
+    bounds = win32_input.get_monitor_bounds(*start)
+    assert bounds is not None
+    left, top, right, bottom = bounds
     try:
         # Park the cursor exactly in the monitor's top-left corner.
         win32_input.move_mouse_relative(left - start[0], top - start[1])
@@ -134,7 +136,9 @@ def test_ensure_off_edge_moves_cursor_away_from_corner():
 def test_ensure_off_edge_is_noop_when_clear_of_edges():
     # Why: when already clear of every edge, ensure_off_edge must not move the cursor (no needless jump).
     start = win32_input.get_cursor_pos()
-    center_x, center_y = win32_input._rect_center(*win32_input.get_monitor_bounds(*start))
+    bounds = win32_input.get_monitor_bounds(*start)
+    assert bounds is not None
+    center_x, center_y = win32_input._rect_center(*bounds)
     try:
         win32_input.move_mouse_relative(center_x - start[0], center_y - start[1])
         centered = win32_input.get_cursor_pos()
