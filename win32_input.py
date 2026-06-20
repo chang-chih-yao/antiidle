@@ -244,6 +244,36 @@ def move_mouse_relative(dx: int, dy: int) -> str | None:
     return None
 
 
+def ensure_off_edge(margin: int) -> str | None:
+    """If the cursor is within `margin` pixels of any edge of its monitor, move it to that monitor's center.
+
+    A nudge fired while the cursor sits at a screen edge is clamped by Windows (no displacement), which both
+    fails to move the cursor and breaks the U->R->D->L cycle's zero-net-drift invariant. Recentering first
+    guarantees the subsequent nudge has room to move. The recenter reuses move_mouse_relative, so it goes
+    through the same absolute-SendInput + SetCursorPos-snap path and likewise resets the system idle timer.
+
+    Args:
+        margin: edge-proximity threshold in pixels; a distance strictly less than this triggers a recenter.
+
+    Returns:
+        None if the cursor was recentered or was already clear of every edge. On failure, a human-readable
+        error string (same contract as move_mouse_relative): the cursor could not be read, the monitor could
+        not be resolved, or the recenter move itself failed.
+    """
+    try:
+        x, y = get_cursor_pos()
+    except OSError as exc:
+        return f"GetCursorPos failed: {exc}"
+    bounds = get_monitor_bounds(x, y)
+    if bounds is None:
+        return "GetMonitorInfo failed: could not resolve the monitor under the cursor"
+    left, top, right, bottom = bounds
+    if not _is_near_edge(x, y, left, top, right, bottom, margin):
+        return None
+    center_x, center_y = _rect_center(left, top, right, bottom)
+    return move_mouse_relative(center_x - x, center_y - y)
+
+
 def set_keep_awake() -> bool:
     """Tell Windows the system and display are in use (prevents idle sleep/lock).
 
