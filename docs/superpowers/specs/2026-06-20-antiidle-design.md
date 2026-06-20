@@ -93,15 +93,17 @@ Thin `ctypes` wrappers over `user32`/`kernel32`. Each sets `argtypes`/`restype` 
 pointer truncation (a common ctypes pitfall). Functions return success booleans; failures are surfaced, not swallowed.
 
 - `get_cursor_pos() -> tuple[int, int]` — `GetCursorPos(LPPOINT)` with `POINT { LONG x; LONG y }`.
-- `move_mouse_relative(dx, dy) -> bool` — move the cursor by `(dx, dy)` **pixels** via an **absolute** `SendInput`.
-  Read the current pixel (`get_cursor_pos`), compute `target = current + (dx, dy)`, convert to `0..65535` normalized
-  virtual-desktop coordinates, and `SendInput` with `dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK`.
-  Returns `True` iff `SendInput` returns 1 (and `False` if the position can't be read or the virtual-screen metrics are invalid).
+- `move_mouse_relative(dx, dy) -> bool` — move the cursor by `(dx, dy)` **pixels**. Read the current pixel
+  (`get_cursor_pos`), compute `target = current + (dx, dy)`, `SendInput` an **absolute** move (`dwFlags = MOUSEEVENTF_MOVE
+  | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK`, target converted to `0..65535` normalized virtual-desktop
+  coordinates), then **`SetCursorPos(target)`** to snap to the exact pixel. Returns `True` iff `SendInput` inserted the
+  event **and** the snap succeeded (`False` if the position can't be read or the virtual-screen metrics are invalid).
   `dwExtraInfo` uses a pointer-sized type (`ULONG_PTR`).
-  **Implementation correction (2026-06-20):** the original design specified a *relative* `MOUSEEVENTF_MOVE`. Physical
+  **Implementation correction (2026-06-20):** the original design specified a *relative* `MOUSEEVENTF_MOVE`, but physical
   testing showed relative deltas are pointer-acceleration "mickeys", not pixels — a 5px request rounded to **0px** of
-  movement. Absolute moves bypass acceleration (≈exact pixels, ±1px from `65535`-grid rounding on high-res/multi-monitor
-  desktops) while remaining real injected input that resets the system idle timer (the reason `SetCursorPos` was rejected).
+  movement. The absolute `SendInput` is real injected input that resets the system idle timer (the reason `SetCursorPos`
+  *alone* was rejected); its `65535`-grid rounding drifts ~1–3px per cycle, so the trailing `SetCursorPos` snap restores
+  exact pixels and an exact return to origin. The `move_mouse_relative(dx, dy) -> bool` contract is unchanged.
 - `set_keep_awake() -> bool` — `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)`.
   Returns `True` iff the call returns non-zero.
 - `clear_keep_awake() -> bool` — `SetThreadExecutionState(ES_CONTINUOUS)` to release the request.
