@@ -73,3 +73,26 @@ def test_full_cycle_returns_to_origin_exactly():
     finally:
         now = win32_input.get_cursor_pos()
         win32_input.move_mouse_relative(start[0] - now[0], start[1] - now[1])
+
+
+def test_rect_center_of_monitor():
+    # Why: the recenter target must be the monitor's center pixel; right/bottom are exclusive.
+    assert win32_input._rect_center(0, 0, 1920, 1080) == (960, 540)
+    assert win32_input._rect_center(1920, 0, 3840, 1080) == (2880, 540)  # right monitor of a dual setup
+
+
+def test_is_near_edge_true_at_each_edge():
+    # Why: a cursor within `margin` of ANY edge must be flagged so an outward nudge can't clamp.
+    # 1920x1080 monitor; last valid pixel is 1919 / 1079.
+    assert win32_input._is_near_edge(0, 540, 0, 0, 1920, 1080, 5) is True      # left edge (dist 0)
+    assert win32_input._is_near_edge(1919, 540, 0, 0, 1920, 1080, 5) is True   # right edge (dist 0)
+    assert win32_input._is_near_edge(960, 0, 0, 0, 1920, 1080, 5) is True      # top edge
+    assert win32_input._is_near_edge(960, 1079, 0, 0, 1920, 1080, 5) is True   # bottom edge
+
+
+def test_is_near_edge_boundary_is_strict_less_than_margin():
+    # Why: the threshold is "distance < margin" (strict). At exactly `margin` away the outward 5px nudge
+    # lands on the last valid pixel and does NOT clamp, so it must count as NOT near.
+    assert win32_input._is_near_edge(1914, 540, 0, 0, 1920, 1080, 5) is False  # dist (1919-1914)=5, not < 5
+    assert win32_input._is_near_edge(1915, 540, 0, 0, 1920, 1080, 5) is True   # dist 4 < 5
+    assert win32_input._is_near_edge(960, 540, 0, 0, 1920, 1080, 5) is False   # center, clear of all edges

@@ -121,6 +121,26 @@ def _pixel_to_normalized(px: int, py: int, vx: int, vy: int, vw: int, vh: int) -
     return nx, ny
 
 
+def _rect_center(left: int, top: int, right: int, bottom: int) -> tuple[int, int]:
+    """Return the center pixel (cx, cy) of a monitor RECT. right/bottom are exclusive (Windows convention)."""
+    return ((left + right) // 2, (top + bottom) // 2)
+
+
+def _is_near_edge(x: int, y: int, left: int, top: int, right: int, bottom: int, margin: int) -> bool:
+    """Return True if (x, y) is within `margin` pixels of any edge of the RECT (left, top, right, bottom).
+
+    right/bottom are exclusive (Windows convention), so the last valid pixel is right-1 / bottom-1. A distance
+    strictly less than `margin` counts as near: at exactly `margin` away an outward `margin`-px nudge still
+    lands on a valid pixel and does not clamp.
+    """
+    return (
+        (x - left) < margin
+        or ((right - 1) - x) < margin
+        or (y - top) < margin
+        or ((bottom - 1) - y) < margin
+    )
+
+
 def move_mouse_relative(dx: int, dy: int) -> str | None:
     """Move the cursor by (dx, dy) pixels using an ABSOLUTE SendInput followed by a SetCursorPos snap.
 
