@@ -61,10 +61,11 @@ def test_move_physically_displaces_cursor():
 
 
 def test_full_cycle_returns_to_origin_exactly():
-    # Why: requirement #2 — a U->R->D->L cycle of 5px nudges must return to the EXACT
-    # origin (no drift). The SetCursorPos snap makes each step pixel-exact, so the four
-    # deltas (which sum to zero) cancel exactly. Assumes the user isn't physically moving
-    # the mouse during this near-instant loop.
+    # Why: requirement #2 — a U->R->D->L cycle of 5px nudges must return to the EXACT origin (no drift).
+    # First recenter off any edge: if the cursor were parked at a screen boundary, the outward nudge would
+    # clamp and the cycle would NOT return to origin — an environmental failure unrelated to the move logic.
+    # ensure_off_edge is a no-op when already clear of edges, so this is safe wherever the cursor starts.
+    win32_input.ensure_off_edge(5)
     start = win32_input.get_cursor_pos()
     try:
         for dx, dy in [(0, -5), (5, 0), (0, 5), (-5, 0)]:
