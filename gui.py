@@ -10,7 +10,7 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 import win32_input
-from controller import DETECT_INTERVAL_SEC, IDLE_THRESHOLD, IdleNudgeController
+from controller import DETECT_INTERVAL_SEC, IDLE_THRESHOLD, STEP_PIXELS, IdleNudgeController
 
 
 class MainWindow(QWidget):
@@ -101,6 +101,13 @@ class MainWindow(QWidget):
         direction = self._controller.on_tick(position)
         if direction is None:
             return
+
+        # Before nudging, make sure the cursor isn't pinned to a screen edge: an outward 5px nudge there
+        # would be clamped (no movement, and the U->R->D->L cycle would no longer cancel to zero net drift).
+        edge_error = win32_input.ensure_off_edge(STEP_PIXELS)
+        if edge_error is not None:
+            # Proceed anyway: a possibly-clamped nudge is no worse than before this guard existed.
+            self.log(f"WARN: recenter failed: {edge_error}")
 
         move_error = win32_input.move_mouse_relative(direction.dx, direction.dy)
         if move_error is not None:
