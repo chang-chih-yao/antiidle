@@ -45,6 +45,7 @@ class IdleNudgeController:
     """
 
     def __init__(self) -> None:
+        """Initialize the controller with cleared state (delegates to reset())."""
         self.reset()
 
     def reset(self) -> None:

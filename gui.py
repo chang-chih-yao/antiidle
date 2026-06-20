@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from typing import TextIO
 
 from PySide6.QtCore import QTimer, Slot
 from PySide6.QtGui import QCloseEvent
@@ -44,7 +45,7 @@ class MainWindow(QWidget):
         layout.addLayout(button_row)
         layout.addWidget(self._log_view)
 
-    def _open_log_file(self):
+    def _open_log_file(self) -> TextIO | None:
         """Open a per-run append-mode log file under logs/. Returns the handle, or None on failure."""
         try:
             os.makedirs("logs", exist_ok=True)
