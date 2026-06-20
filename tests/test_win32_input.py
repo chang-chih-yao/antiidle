@@ -58,3 +58,18 @@ def test_move_physically_displaces_cursor():
         # Restore exactly to the starting position regardless of rounding above.
         now = win32_input.get_cursor_pos()
         win32_input.move_mouse_relative(start[0] - now[0], start[1] - now[1])
+
+
+def test_full_cycle_returns_to_origin_exactly():
+    # Why: requirement #2 — a U->R->D->L cycle of 5px nudges must return to the EXACT
+    # origin (no drift). The SetCursorPos snap makes each step pixel-exact, so the four
+    # deltas (which sum to zero) cancel exactly. Assumes the user isn't physically moving
+    # the mouse during this near-instant loop.
+    start = win32_input.get_cursor_pos()
+    try:
+        for dx, dy in [(0, -5), (5, 0), (0, 5), (-5, 0)]:
+            assert win32_input.move_mouse_relative(dx, dy) is True
+        assert win32_input.get_cursor_pos() == start
+    finally:
+        now = win32_input.get_cursor_pos()
+        win32_input.move_mouse_relative(start[0] - now[0], start[1] - now[1])

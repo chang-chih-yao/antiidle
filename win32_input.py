@@ -82,6 +82,10 @@ kernel32.SetThreadExecutionState.restype = wintypes.DWORD
 user32.GetSystemMetrics.argtypes = [ctypes.c_int]
 user32.GetSystemMetrics.restype = ctypes.c_int
 
+# SetCursorPos(int X, int Y) -> BOOL
+user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+user32.SetCursorPos.restype = wintypes.BOOL
+
 
 def get_cursor_pos() -> tuple[int, int]:
     """Return the current cursor position as (x, y).
@@ -117,12 +121,17 @@ def _pixel_to_normalized(px: int, py: int, vx: int, vy: int, vw: int, vh: int) -
 
 
 def move_mouse_relative(dx: int, dy: int) -> bool:
-    """Move the cursor by (dx, dy) pixels using an ABSOLUTE SendInput.
+    """Move the cursor by (dx, dy) pixels using an ABSOLUTE SendInput followed by a SetCursorPos snap.
 
     A RELATIVE MOUSEEVENTF_MOVE delta is in pointer-acceleration "mickeys", not pixels
     (a 5px request can round to 0px of movement). An absolute move bypasses acceleration so
     the displacement is exact, while remaining real injected input that resets the system
     idle timer (which SetCursorPos does not reliably do).
+
+    The absolute SendInput resets the idle timer but its 65535-grid rounding can be off by ~1px,
+    which accumulates into ~3px drift per U->R->D->L cycle. The SetCursorPos snap after the
+    SendInput corrects the final pixel position to be exact, guaranteeing an exact return to
+    origin over a full cycle.
 
     Returns:
         True iff exactly one input event was inserted (False if the cursor position could
@@ -132,6 +141,7 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
         cx, cy = get_cursor_pos()
     except OSError:
         return False
+    tx, ty = cx + dx, cy + dy
     vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
     vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
     vw = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
@@ -140,13 +150,17 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
         # GetSystemMetrics returns 0 on failure; without this guard (vw - 1) would be
         # negative and the cursor would be sent off-screen. Fail loud via the bool contract.
         return False
-    nx, ny = _pixel_to_normalized(cx + dx, cy + dy, vx, vy, vw, vh)
+    nx, ny = _pixel_to_normalized(tx, ty, vx, vy, vw, vh)
     inp = INPUT()
     inp.type = INPUT_MOUSE
     inp.union.mi = MOUSEINPUT(dx=nx, dy=ny, mouseData=0,
                               dwFlags=MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
                               time=0, dwExtraInfo=0)
     sent = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    # Snap to the exact target pixel. The absolute SendInput above resets the system idle
+    # timer (real injected input) but its 65535-grid rounding can be off by ~1px, which would
+    # accumulate and break the return-to-origin guarantee. SetCursorPos is pixel-exact.
+    user32.SetCursorPos(tx, ty)
     return sent == 1
 
 
