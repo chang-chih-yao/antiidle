@@ -37,6 +37,13 @@ def test_pixel_to_normalized_maps_corners():
     assert win32_input._pixel_to_normalized(1919, 1079, 0, 0, 1920, 1080) == (65535, 65535)
 
 
+def test_pixel_to_normalized_clamps_out_of_range():
+    # Why: a nudge near the desktop edge can target a pixel just outside it; the
+    # normalized result must stay within [0, 65535] (SendInput is undefined otherwise).
+    assert win32_input._pixel_to_normalized(-50, -50, 0, 0, 1920, 1080) == (0, 0)
+    assert win32_input._pixel_to_normalized(5000, 5000, 0, 0, 1920, 1080) == (65535, 65535)
+
+
 def test_move_physically_displaces_cursor():
     # Why: relative-mickey SendInput is acceleration-scaled and rounded a 5px request
     # to 0px (no movement at all). Assert the cursor ACTUALLY displaces ~5px so this
@@ -48,4 +55,6 @@ def test_move_physically_displaces_cursor():
         moved_up = start[1] - after[1]  # UP is -y, so start.y - after.y is ~+5
         assert 4 <= moved_up <= 6, f"expected ~5px upward move, got {moved_up}"
     finally:
-        win32_input.move_mouse_relative(0, 5)  # nudge back toward the origin
+        # Restore exactly to the starting position regardless of rounding above.
+        now = win32_input.get_cursor_pos()
+        win32_input.move_mouse_relative(start[0] - now[0], start[1] - now[1])

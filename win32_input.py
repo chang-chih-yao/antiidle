@@ -102,12 +102,17 @@ def _pixel_to_normalized(px: int, py: int, vx: int, vy: int, vw: int, vh: int) -
         px, py: target pixel in screen coordinates.
         vx, vy: virtual-desktop origin (SM_X/Y VIRTUALSCREEN).
         vw, vh: virtual-desktop width/height in pixels (SM_CX/CY VIRTUALSCREEN), each >= 2.
+            Precondition: vw >= 2 and vh >= 2 (callers must guard; the divisor is vw-1 / vh-1).
 
     Returns:
         (nx, ny) normalized 0..65535 coordinates for a MOUSEEVENTF_ABSOLUTE | VIRTUALDESK move.
     """
     nx = round((px - vx) * 65535 / (vw - 1))
     ny = round((py - vy) * 65535 / (vh - 1))
+    # A nudge near the desktop edge can target a pixel just outside it; SendInput's
+    # behavior for absolute coordinates outside [0, 65535] is undefined, so clamp.
+    nx = max(0, min(65535, nx))
+    ny = max(0, min(65535, ny))
     return nx, ny
 
 
@@ -131,6 +136,10 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
     vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
     vw = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
     vh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+    if vw < 2 or vh < 2:
+        # GetSystemMetrics returns 0 on failure; without this guard (vw - 1) would be
+        # negative and the cursor would be sent off-screen. Fail loud via the bool contract.
+        return False
     nx, ny = _pixel_to_normalized(cx + dx, cy + dy, vx, vy, vw, vh)
     inp = INPUT()
     inp.type = INPUT_MOUSE
