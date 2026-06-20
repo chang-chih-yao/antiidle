@@ -134,8 +134,8 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
     origin over a full cycle.
 
     Returns:
-        True iff exactly one input event was inserted (False if the cursor position could
-        not be read).
+        True iff the input event was inserted and the exact-position snap succeeded (False if the cursor
+        position could not be read or the virtual-screen metrics are invalid).
     """
     try:
         cx, cy = get_cursor_pos()
@@ -160,8 +160,8 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
     # Snap to the exact target pixel. The absolute SendInput above resets the system idle
     # timer (real injected input) but its 65535-grid rounding can be off by ~1px, which would
     # accumulate and break the return-to-origin guarantee. SetCursorPos is pixel-exact.
-    user32.SetCursorPos(tx, ty)
-    return sent == 1
+    snapped = user32.SetCursorPos(tx, ty)
+    return sent == 1 and bool(snapped)
 
 
 def set_keep_awake() -> bool:
