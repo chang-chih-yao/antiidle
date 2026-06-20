@@ -10,6 +10,9 @@ actually prevented), whereas SetCursorPos merely teleports the cursor and often
 does not reset it. The move uses MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK so
 that the displacement is exact pixels (relative mickey deltas are pointer-acceleration
 scaled and a small value like 5px can round to 0px of actual movement).
+
+Monitor geometry (get_monitor_bounds) is reported in physical pixels, which holds because the GUI process is
+per-monitor DPI aware via Qt 6's default (Per-Monitor-DPI-Aware-V2). Do not mix these with Qt logical coords.
 """
 from __future__ import annotations
 
@@ -30,6 +33,8 @@ SM_CYVIRTUALSCREEN = 79
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 ES_DISPLAY_REQUIRED = 0x00000002
+
+MONITOR_DEFAULTTONEAREST = 2
 
 # Pointer-sized unsigned integer for the ULONG_PTR field (8 bytes on 64-bit).
 ULONG_PTR = ctypes.c_size_t
@@ -67,6 +72,17 @@ class INPUT(ctypes.Structure):
     ]
 
 
+class MONITORINFO(ctypes.Structure):
+    """Win32 MONITORINFO. cbSize must be set to sizeof(MONITORINFO) before GetMonitorInfoW is called."""
+
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),   # full monitor rect in virtual-screen pixels; right/bottom exclusive
+        ("rcWork", wintypes.RECT),      # work area (unused here)
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
 # GetCursorPos(LPPOINT) -> BOOL
 user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
 user32.GetCursorPos.restype = wintypes.BOOL
@@ -86,6 +102,14 @@ user32.GetSystemMetrics.restype = ctypes.c_int
 # SetCursorPos(int X, int Y) -> BOOL
 user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
 user32.SetCursorPos.restype = wintypes.BOOL
+
+# MonitorFromPoint(POINT pt, DWORD dwFlags) -> HMONITOR
+user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+user32.MonitorFromPoint.restype = ctypes.c_void_p
+
+# GetMonitorInfoW(HMONITOR hMonitor, LPMONITORINFO lpmi) -> BOOL
+user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+user32.GetMonitorInfoW.restype = wintypes.BOOL
 
 
 def get_cursor_pos() -> tuple[int, int]:
@@ -139,6 +163,25 @@ def _is_near_edge(x: int, y: int, left: int, top: int, right: int, bottom: int, 
         or (y - top) < margin
         or ((bottom - 1) - y) < margin
     )
+
+
+def get_monitor_bounds(x: int, y: int) -> tuple[int, int, int, int] | None:
+    """Return (left, top, right, bottom) of the monitor containing (x, y), in physical pixels.
+
+    Uses MonitorFromPoint with MONITOR_DEFAULTTONEAREST, so a point just off every monitor still resolves to
+    the nearest one (the returned handle is therefore always valid). right/bottom are exclusive (Windows RECT
+    convention). Returns None if GetMonitorInfoW fails.
+
+    The coordinates are physical pixels only when the process is per-monitor DPI aware; the GUI gets this from
+    Qt 6's default (Per-Monitor-DPI-Aware-V2). Callers must not mix this rect with Qt logical coordinates.
+    """
+    monitor = user32.MonitorFromPoint(wintypes.POINT(x, y), MONITOR_DEFAULTTONEAREST)
+    info = MONITORINFO()
+    info.cbSize = ctypes.sizeof(MONITORINFO)
+    if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return None
+    rect = info.rcMonitor
+    return (rect.left, rect.top, rect.right, rect.bottom)
 
 
 def move_mouse_relative(dx: int, dy: int) -> str | None:

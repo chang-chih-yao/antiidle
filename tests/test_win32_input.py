@@ -96,3 +96,14 @@ def test_is_near_edge_boundary_is_strict_less_than_margin():
     assert win32_input._is_near_edge(1914, 540, 0, 0, 1920, 1080, 5) is False  # dist (1919-1914)=5, not < 5
     assert win32_input._is_near_edge(1915, 540, 0, 0, 1920, 1080, 5) is True   # dist 4 < 5
     assert win32_input._is_near_edge(960, 540, 0, 0, 1920, 1080, 5) is False   # center, clear of all edges
+
+
+def test_get_monitor_bounds_contains_cursor():
+    # Why: the recenter math depends on a monitor rect that actually contains the cursor, with the cursor
+    # strictly inside the exclusive right/bottom bounds. A wrong rect would recenter onto the wrong monitor.
+    x, y = win32_input.get_cursor_pos()
+    bounds = win32_input.get_monitor_bounds(x, y)
+    assert bounds is not None
+    left, top, right, bottom = bounds
+    assert left < right and top < bottom
+    assert left <= x < right and top <= y < bottom
