@@ -728,7 +728,8 @@ EOF
 
 ## Notes / known edge cases (from the spec)
 
-- At the extreme screen edge a 5px relative move is clamped by Windows, so a single 4-step cycle may not return *exactly* to the origin. Rare and harmless; `sync_position` keeps idle detection correct regardless.
+- **Implementation correction (2026-06-20): `move_mouse_relative` uses an ABSOLUTE `SendInput`, not the relative move shown in Task 2's code block.** Physical testing proved relative `MOUSEEVENTF_MOVE` deltas are pointer-acceleration "mickeys", not pixels — a 5px request moved **0px**. The shipped `win32_input.py` instead computes `target = current + delta`, converts to `0..65535` normalized virtual-desktop coords, and sends `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK` (guarded against GetSystemMetrics failure, clamped to `[0,65535]`). Same `move_mouse_relative(dx, dy) -> bool` contract, so the controller/GUI are unchanged. See spec §5 and `win32_input.py`. The Task 2 relative code below is retained for historical accuracy only.
+- At the extreme screen edge the absolute target is clamped, so a single 4-step cycle may not return *exactly* to the origin (also ±1px from `65535`-grid rounding). Rare and harmless; `sync_position` keeps idle detection correct regardless.
 - The first sample on each Start only establishes the baseline (never nudges). The first cursor read happens on the first timer tick (after 60 s); no immediate sample is taken on Start.
 - No system tray, pause/resume, settings UI, or auto-start (YAGNI). Closing the window exits the app.
 - Spec §8 listed `closeEvent + aboutToQuit` for keep-awake cleanup; this plan uses `closeEvent` only. For a single-window app with no tray/menu, closing the window is the only exit path, so `closeEvent` fully covers it, and `clear_keep_awake()` is idempotent/harmless if called more than once. This avoids depending on the unverified `aboutToQuit` signal.
