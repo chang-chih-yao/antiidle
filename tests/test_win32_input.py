@@ -65,6 +65,8 @@ def test_full_cycle_returns_to_origin_exactly():
     # First recenter off any edge: if the cursor were parked at a screen boundary, the outward nudge would
     # clamp and the cycle would NOT return to origin — an environmental failure unrelated to the move logic.
     # ensure_off_edge is a no-op when already clear of edges, so this is safe wherever the cursor starts.
+    # The assertion still catches real regressions: without the SetCursorPos snap each step accumulates ~1px
+    # rounding error and the four steps do NOT cancel exactly.
     win32_input.ensure_off_edge(5)
     start = win32_input.get_cursor_pos()
     try:
