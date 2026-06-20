@@ -3,10 +3,12 @@
 Windows-only. Each call sets argtypes/restype explicitly to avoid 64-bit pointer
 truncation, and returns a success boolean (or the position) so callers can fail loud.
 
-Why SendInput rather than SetCursorPos for the nudge: a synthesized relative
+Why SendInput rather than SetCursorPos for the nudge: a synthesized absolute
 MOUSEEVENTF_MOVE reliably resets the system idle timer (so the lock screen is
 actually prevented), whereas SetCursorPos merely teleports the cursor and often
-does not reset it.
+does not reset it. The move uses MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK so
+that the displacement is exact pixels (relative mickey deltas are pointer-acceleration
+scaled and a small value like 5px can round to 0px of actual movement).
 """
 from __future__ import annotations
 
@@ -16,6 +18,13 @@ from ctypes import wintypes
 # --- Win32 constants ---
 INPUT_MOUSE = 0
 MOUSEEVENTF_MOVE = 0x0001
+MOUSEEVENTF_ABSOLUTE = 0x8000
+MOUSEEVENTF_VIRTUALDESK = 0x4000
+
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
 
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
@@ -69,6 +78,10 @@ user32.SendInput.restype = wintypes.UINT
 kernel32.SetThreadExecutionState.argtypes = [wintypes.DWORD]
 kernel32.SetThreadExecutionState.restype = wintypes.DWORD
 
+# GetSystemMetrics(int nIndex) -> int
+user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+user32.GetSystemMetrics.restype = ctypes.c_int
+
 
 def get_cursor_pos() -> tuple[int, int]:
     """Return the current cursor position as (x, y).
@@ -82,15 +95,48 @@ def get_cursor_pos() -> tuple[int, int]:
     return (point.x, point.y)
 
 
-def move_mouse_relative(dx: int, dy: int) -> bool:
-    """Move the cursor by (dx, dy) pixels using synthesized input (SendInput).
+def _pixel_to_normalized(px: int, py: int, vx: int, vy: int, vw: int, vh: int) -> tuple[int, int]:
+    """Convert a screen pixel (px, py) to a 0..65535 absolute coordinate over the virtual desktop.
+
+    Args:
+        px, py: target pixel in screen coordinates.
+        vx, vy: virtual-desktop origin (SM_X/Y VIRTUALSCREEN).
+        vw, vh: virtual-desktop width/height in pixels (SM_CX/CY VIRTUALSCREEN), each >= 2.
 
     Returns:
-        True iff exactly one input event was inserted.
+        (nx, ny) normalized 0..65535 coordinates for a MOUSEEVENTF_ABSOLUTE | VIRTUALDESK move.
     """
+    nx = round((px - vx) * 65535 / (vw - 1))
+    ny = round((py - vy) * 65535 / (vh - 1))
+    return nx, ny
+
+
+def move_mouse_relative(dx: int, dy: int) -> bool:
+    """Move the cursor by (dx, dy) pixels using an ABSOLUTE SendInput.
+
+    A RELATIVE MOUSEEVENTF_MOVE delta is in pointer-acceleration "mickeys", not pixels
+    (a 5px request can round to 0px of movement). An absolute move bypasses acceleration so
+    the displacement is exact, while remaining real injected input that resets the system
+    idle timer (which SetCursorPos does not reliably do).
+
+    Returns:
+        True iff exactly one input event was inserted (False if the cursor position could
+        not be read).
+    """
+    try:
+        cx, cy = get_cursor_pos()
+    except OSError:
+        return False
+    vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+    vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+    vw = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+    vh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+    nx, ny = _pixel_to_normalized(cx + dx, cy + dy, vx, vy, vw, vh)
     inp = INPUT()
     inp.type = INPUT_MOUSE
-    inp.union.mi = MOUSEINPUT(dx=dx, dy=dy, mouseData=0, dwFlags=MOUSEEVENTF_MOVE, time=0, dwExtraInfo=0)
+    inp.union.mi = MOUSEINPUT(dx=nx, dy=ny, mouseData=0,
+                              dwFlags=MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+                              time=0, dwExtraInfo=0)
     sent = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
     return sent == 1
 

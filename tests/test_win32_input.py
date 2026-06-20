@@ -28,3 +28,24 @@ def test_keep_awake_roundtrip_succeeds():
     # Why: confirms SetThreadExecutionState is wired correctly in both directions.
     assert win32_input.set_keep_awake() is True
     assert win32_input.clear_keep_awake() is True
+
+
+def test_pixel_to_normalized_maps_corners():
+    # Why: the absolute-move math must map the virtual-desktop origin to 0 and the
+    # far corner to 65535; a wrong formula would mis-place every nudge.
+    assert win32_input._pixel_to_normalized(0, 0, 0, 0, 1920, 1080) == (0, 0)
+    assert win32_input._pixel_to_normalized(1919, 1079, 0, 0, 1920, 1080) == (65535, 65535)
+
+
+def test_move_physically_displaces_cursor():
+    # Why: relative-mickey SendInput is acceleration-scaled and rounded a 5px request
+    # to 0px (no movement at all). Assert the cursor ACTUALLY displaces ~5px so this
+    # regression cannot return. Restores the original position afterward.
+    start = win32_input.get_cursor_pos()
+    try:
+        assert win32_input.move_mouse_relative(0, -5) is True
+        after = win32_input.get_cursor_pos()
+        moved_up = start[1] - after[1]  # UP is -y, so start.y - after.y is ~+5
+        assert 4 <= moved_up <= 6, f"expected ~5px upward move, got {moved_up}"
+    finally:
+        win32_input.move_mouse_relative(0, 5)  # nudge back toward the origin
