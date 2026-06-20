@@ -82,7 +82,8 @@ class MainWindow(QWidget):
     def _on_stop(self) -> None:
         """Stop monitoring: stop the timer and release keep-awake."""
         self._timer.stop()
-        win32_input.clear_keep_awake()
+        if not win32_input.clear_keep_awake():
+            self.log("WARN: SetThreadExecutionState (clear) failed.")
         self._start_button.setEnabled(True)
         self._stop_button.setEnabled(False)
         self.log("Stopped monitoring.")
@@ -114,7 +115,9 @@ class MainWindow(QWidget):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Release keep-awake and close the log file when the window closes."""
         self._timer.stop()
-        win32_input.clear_keep_awake()
+        # WARN before closing the log file so self.log() can still reach it.
+        if not win32_input.clear_keep_awake():
+            self.log("WARN: SetThreadExecutionState (clear) failed.")
         if self._log_file is not None:
             self._log_file.close()
         event.accept()
