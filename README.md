@@ -4,7 +4,8 @@ A small Windows GUI that prevents the screen from locking / the system from goin
 
 While running, it samples the cursor position once a minute. After 10 consecutive
 identical samples (~10 minutes of no movement) it nudges the cursor 5px, cycling
-through Up → Right → Down → Left so there is no net drift over a full cycle. It also
+through Up → Right → Down → Left so there is no net drift over a full cycle. Before each nudge, if the cursor is within 5 px of any edge of its current monitor, it is first moved to that
+monitor's center so the nudge cannot be clamped at the screen boundary. It also
 sets `SetThreadExecutionState` while active as a safety net. Each nudge and each
 Start/Stop is logged to the window and to a per-run file under `logs/`.
 
@@ -46,7 +47,7 @@ Edit the constants at the top of `controller.py`:
 ## Architecture
 
 - `controller.py` — pure idle-detection state machine (`IdleNudgeController`), no Qt/Win32; unit-tested.
-- `win32_input.py` — thin `ctypes` wrappers: `GetCursorPos`, `SendInput`, `SetThreadExecutionState`.
+- `win32_input.py` — thin `ctypes` wrappers: `GetCursorPos`, `SendInput`, `MonitorFromPoint`/`GetMonitorInfo` (edge recenter), `SetThreadExecutionState`.
 - `gui.py` — `MainWindow`: buttons, log view, the sampling `QTimer`, file logging.
 - `antiidle.py` — entry point.
 
