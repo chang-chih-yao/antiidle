@@ -1,7 +1,8 @@
 """Thin Win32 (ctypes) wrappers: read the cursor, nudge it, and keep Windows awake.
 
 Windows-only. Each call sets argtypes/restype explicitly to avoid 64-bit pointer
-truncation, and returns a success boolean (or the position) so callers can fail loud.
+truncation, and reports failure so callers can fail loud — by raising OSError, returning a
+success boolean, or returning an error-detail string, per each function's docstring.
 
 Why SendInput rather than SetCursorPos for the nudge: a synthesized absolute
 MOUSEEVENTF_MOVE reliably resets the system idle timer (so the lock screen is
@@ -120,7 +121,7 @@ def _pixel_to_normalized(px: int, py: int, vx: int, vy: int, vw: int, vh: int) -
     return nx, ny
 
 
-def move_mouse_relative(dx: int, dy: int) -> bool:
+def move_mouse_relative(dx: int, dy: int) -> str | None:
     """Move the cursor by (dx, dy) pixels using an ABSOLUTE SendInput followed by a SetCursorPos snap.
 
     A RELATIVE MOUSEEVENTF_MOVE delta is in pointer-acceleration "mickeys", not pixels
@@ -134,13 +135,18 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
     origin over a full cycle.
 
     Returns:
-        True iff the input event was inserted and the exact-position snap succeeded (False if the cursor
-        position could not be read or the virtual-screen metrics are invalid).
+        None on success. On failure, a human-readable string naming the Win32 call that failed and
+        its formatted GetLastError detail, e.g. "SendInput failed (inserted 0/1 events): [WinError 5]
+        Access is denied." so callers can log exactly why the nudge was dropped instead of a generic
+        "SendInput failed". A string is returned rather than raised so the sampling loop survives a
+        transient failure, and GetLastError is captured here (not by the caller) because the code is
+        only valid immediately after the failing call — later Win32 calls overwrite the thread-local
+        last-error, so it cannot be retrieved after this function returns.
     """
     try:
         cx, cy = get_cursor_pos()
-    except OSError:
-        return False
+    except OSError as exc:
+        return f"GetCursorPos failed: {exc}"
     tx, ty = cx + dx, cy + dy
     vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
     vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
@@ -148,8 +154,8 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
     vh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
     if vw < 2 or vh < 2:
         # GetSystemMetrics returns 0 on failure; without this guard (vw - 1) would be
-        # negative and the cursor would be sent off-screen. Fail loud via the bool contract.
-        return False
+        # negative and the cursor would be sent off-screen. Fail loud via the return contract.
+        return f"virtual-screen metrics invalid: GetSystemMetrics returned width={vw}, height={vh}"
     nx, ny = _pixel_to_normalized(tx, ty, vx, vy, vw, vh)
     inp = INPUT()
     inp.type = INPUT_MOUSE
@@ -157,11 +163,22 @@ def move_mouse_relative(dx: int, dy: int) -> bool:
                               dwFlags=MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
                               time=0, dwExtraInfo=0)
     sent = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    # Capture SendInput's GetLastError into a variable NOW: the SetCursorPos snap below is
+    # another Win32 call and would overwrite the thread-local last-error that use_last_error=True
+    # records for ctypes. (The snap's own error needs no variable — nothing follows it, so it can
+    # be read inline at its return.)
+    send_err = ctypes.get_last_error() if sent != 1 else 0
     # Snap to the exact target pixel. The absolute SendInput above resets the system idle
     # timer (real injected input) but its 65535-grid rounding can be off by ~1px, which would
     # accumulate and break the return-to-origin guarantee. SetCursorPos is pixel-exact.
     snapped = user32.SetCursorPos(tx, ty)
-    return sent == 1 and bool(snapped)
+    # Report the first failure in call order. ctypes.WinError formats the numeric code into a
+    # readable message via FormatMessage (e.g. "[WinError 5] Access is denied.").
+    if sent != 1:
+        return f"SendInput failed (inserted {sent}/1 events): {ctypes.WinError(send_err)}"
+    if not snapped:
+        return f"SetCursorPos snap failed: {ctypes.WinError(ctypes.get_last_error())}"
+    return None
 
 
 def set_keep_awake() -> bool:

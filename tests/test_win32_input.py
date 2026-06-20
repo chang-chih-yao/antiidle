@@ -21,7 +21,7 @@ def test_get_cursor_pos_returns_int_pair():
 def test_zero_move_is_harmless_noop_and_succeeds():
     # Why: a 0px relative move exercises the full SendInput struct/argtypes path
     # (the riskiest plumbing) without moving the user's cursor.
-    assert win32_input.move_mouse_relative(0, 0) is True
+    assert win32_input.move_mouse_relative(0, 0) is None  # None == success; a string would be the failure reason
 
 
 def test_keep_awake_roundtrip_succeeds():
@@ -50,7 +50,7 @@ def test_move_physically_displaces_cursor():
     # regression cannot return. Restores the original position afterward.
     start = win32_input.get_cursor_pos()
     try:
-        assert win32_input.move_mouse_relative(0, -5) is True
+        assert win32_input.move_mouse_relative(0, -5) is None
         after = win32_input.get_cursor_pos()
         moved_up = start[1] - after[1]  # UP is -y, so start.y - after.y is ~+5
         assert 4 <= moved_up <= 6, f"expected ~5px upward move, got {moved_up}"
@@ -68,7 +68,7 @@ def test_full_cycle_returns_to_origin_exactly():
     start = win32_input.get_cursor_pos()
     try:
         for dx, dy in [(0, -5), (5, 0), (0, 5), (-5, 0)]:
-            assert win32_input.move_mouse_relative(dx, dy) is True
+            assert win32_input.move_mouse_relative(dx, dy) is None
         assert win32_input.get_cursor_pos() == start
     finally:
         now = win32_input.get_cursor_pos()

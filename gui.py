@@ -102,8 +102,9 @@ class MainWindow(QWidget):
         if direction is None:
             return
 
-        if not win32_input.move_mouse_relative(direction.dx, direction.dy):
-            self.log("WARN: SendInput failed; mouse not moved.")
+        move_error = win32_input.move_mouse_relative(direction.dx, direction.dy)
+        if move_error is not None:
+            self.log(f"WARN: mouse not moved: {move_error}")
             return
 
         # Feed the controller the real post-move position so the next nudge waits a full cycle.
